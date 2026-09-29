@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Hispaniola II - Prueba WebXR</title>
 
-  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+  <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
 </head>
 <script>
 AFRAME.registerComponent('quest-locomotion', {
@@ -95,7 +95,7 @@ const y = this.axis[1] || 0;
 
   <a-entity
   id="leftHand"
-  meta-touch-controls="hand: left"
+  hand-controls="hand: left"
   quest-locomotion>
 </a-entity>
 
