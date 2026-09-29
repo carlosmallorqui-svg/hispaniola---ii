@@ -7,7 +7,42 @@
 
   <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
 </head>
+<script>
+AFRAME.registerComponent('quest-locomotion', {
+  init: function () {
+    this.axis = [0, 0];
 
+    this.el.addEventListener('axismove', (event) => {
+      this.axis = event.detail.axis;
+    });
+  },
+
+  tick: function (time, delta) {
+    const rig = document.querySelector('#rig');
+    const camera = document.querySelector('#camera');
+
+    if (!rig || !camera) return;
+
+    const x = this.axis[2] || 0;
+    const y = this.axis[3] || 0;
+
+    if (Math.abs(x) < 0.15 && Math.abs(y) < 0.15) return;
+
+    const direction = new THREE.Vector3();
+    camera.object3D.getWorldDirection(direction);
+    direction.y = 0;
+    direction.normalize();
+
+    const right = new THREE.Vector3();
+    right.crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
+
+    const speed = 2.0 * (delta / 1000);
+
+    rig.object3D.position.addScaledVector(direction, -y * speed);
+    rig.object3D.position.addScaledVector(right, x * speed);
+  }
+});
+      </script>
 <body>
 
   <a-scene>
@@ -49,13 +84,27 @@
     <!-- Cielo -->
     <a-sky color="#87CEEB"></a-sky>
 
-    <!-- Cámara / jugador -->
-    <a-entity
-      position="0 0 0"
-      camera
-      look-controls
-      wasd-controls>
-    </a-entity>
+  <!-- Jugador VR -->
+<a-entity id="rig" position="0 0 0">
+
+  <a-camera
+    id="camera"
+    position="0 1.6 0"
+    look-controls>
+  </a-camera>
+
+  <a-entity
+    id="leftHand"
+    hand-controls="hand: left">
+    quest-locomotion>
+  </a-entity>
+
+  <a-entity
+    id="rightHand"
+    hand-controls="hand: right">
+  </a-entity>
+
+</a-entity>
 
   </a-scene>
 
