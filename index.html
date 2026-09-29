@@ -12,9 +12,9 @@ AFRAME.registerComponent('quest-locomotion', {
   init: function () {
     this.axis = [0, 0];
 
-    this.el.addEventListener('axismove', (event) => {
-      this.axis = event.detail.axis;
-    });
+    this.el.addEventListener('thumbstickmoved', (event) => {
+  this.axis = [event.detail.x, event.detail.y];
+});
   },
 
   tick: function (time, delta) {
@@ -23,8 +23,8 @@ AFRAME.registerComponent('quest-locomotion', {
 
     if (!rig || !camera) return;
 
-    const x = this.axis[2] || 0;
-    const y = this.axis[3] || 0;
+    const x = this.axis[0] || 0;
+const y = this.axis[1] || 0;
 
     if (Math.abs(x) < 0.15 && Math.abs(y) < 0.15) return;
 
