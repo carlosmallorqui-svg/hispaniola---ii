@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Hispaniola II - La Cala</title>
+</head>
+
+<body>
+    <h1>Hispaniola II - La Cala</h1>
+    <p>El barco se perdió. La tripulación no.</p>
+
+    <script>
+        window.addEventListener("bs-loaded", () => {
+
+            const scene = BS.BanterScene.GetInstance();
+
+            scene.On("unity-loaded", () => {
+
+                const settings = new BS.SceneSettings();
+                settings.EnableTeleport = true;
+                settings.EnableAvatars = true;
+                settings.EnableGuests = true;
+                settings.SpawnPoint = new BS.Vector4(0, 1, -4, 0);
+                scene.SetSettings(settings);
+
+                const marker = new BS.GameObject({
+                    name: "HispaniolaMarker",
+                    localPosition: new BS.Vector3(0, 1.5, 2)
+                });
+
+                marker.AddComponent(
+                    new BS.BanterSphere({
+                        radius: 0.75
+                    })
+                );
+
+                marker.AddComponent(
+                    new BS.BanterMaterial({
+                        color: new BS.Vector4(0.72, 0.48, 0.20, 1)
+                    })
+                );
+
+                marker.AddComponent(
+                    new BS.SphereCollider({
+                        radius: 0.75
+                    })
+                );
+
+                console.log("Hispaniola II: La Cala cargada.");
+            });
+        });
+    </script>
+</body>
+  </html>
