@@ -1,54 +1,63 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Hispaniola II - La Cala</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hispaniola II - Prueba WebXR</title>
+
+  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
 </head>
 
 <body>
-    <h1>Hispaniola II - La Cala</h1>
-    <p>El barco se perdió. La tripulación no.</p>
 
-    <script>
-        window.addEventListener("bs-loaded", () => {
+  <a-scene>
+    
+    <!-- Suelo -->
+    <a-plane
+      position="0 0 -4"
+      rotation="-90 0 0"
+      width="20"
+      height="20"
+      color="#CDBA87">
+    </a-plane>
 
-            const scene = BS.BanterScene.GetInstance();
+    <!-- Nuestro glorioso primer cubo 😂 -->
+    <a-box
+      position="0 1 -4"
+      width="1"
+      height="2"
+      depth="1"
+      color="#8B4513">
+    </a-box>
 
-            scene.On("unity-loaded", () => {
+    <!-- Una esfera para comprobar profundidad -->
+    <a-sphere
+      position="2 1 -5"
+      radius="0.75"
+      color="#D8B46A">
+    </a-sphere>
 
-                const settings = new BS.SceneSettings();
-                settings.EnableTeleport = true;
-                settings.EnableAvatars = true;
-                settings.EnableGuests = true;
-                settings.SpawnPoint = new BS.Vector4(0, 1, -4, 0);
-                scene.SetSettings(settings);
+    <!-- Una especie de mar provisional -->
+    <a-plane
+      position="0 -0.05 -14"
+      rotation="-90 0 0"
+      width="40"
+      height="15"
+      color="#287F9E">
+    </a-plane>
 
-                const marker = new BS.GameObject({
-                    name: "HispaniolaMarker",
-                    localPosition: new BS.Vector3(0, 1.5, 2)
-                });
+    <!-- Cielo -->
+    <a-sky color="#87CEEB"></a-sky>
 
-                marker.AddComponent(
-                    new BS.BanterSphere({
-                        radius: 0.75
-                    })
-                );
+    <!-- Cámara / jugador -->
+    <a-entity
+      position="0 0 0"
+      camera
+      look-controls
+      wasd-controls>
+    </a-entity>
 
-                marker.AddComponent(
-                    new BS.BanterMaterial({
-                        color: new BS.Vector4(0.72, 0.48, 0.20, 1)
-                    })
-                );
+  </a-scene>
 
-                marker.AddComponent(
-                    new BS.SphereCollider({
-                        radius: 0.75
-                    })
-                );
-
-                console.log("Hispaniola II: La Cala cargada.");
-            });
-        });
-    </script>
 </body>
-  </html>
+</html>
