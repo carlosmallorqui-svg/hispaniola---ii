@@ -41,6 +41,26 @@ const y = -(this.axis[1] || 0);
     rig.object3D.position.addScaledVector(direction, -y * speed);
     rig.object3D.position.addScaledVector(right, x * speed);
   }
+}); AFRAME.registerComponent('smooth-turn', {
+  init: function () {
+    this.turnX = 0;
+
+    this.el.addEventListener('thumbstickmoved', (event) => {
+      this.turnX = event.detail.x || 0;
+    });
+  },
+
+  tick: function (time, delta) {
+    if (Math.abs(this.turnX) < 0.15) return;
+
+    const rig = document.querySelector('#rig');
+    if (!rig) return;
+
+    const turnSpeed = 180; // grados por segundo
+    const amount = -this.turnX * turnSpeed * (delta / 1000);
+
+    rig.object3D.rotation.y += THREE.MathUtils.degToRad(amount);
+  }
 });
       </script>
 <body>
@@ -100,9 +120,10 @@ const y = -(this.axis[1] || 0);
 </a-entity>
 
   <a-entity
-    id="rightHand"
-    hand-controls="hand: right">
-  </a-entity>
+  id="rightHand"
+  hand-controls="hand: right"
+  smooth-turn>
+</a-entity>
 
 </a-entity>
 
