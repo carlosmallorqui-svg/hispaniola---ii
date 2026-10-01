@@ -368,19 +368,69 @@
       1.0 - depthFactor;
 
     color +=
-      vec3(
-        0.02,
-        0.06,
-        0.045
-      ) *
-      shallowGlow;
+  vec3(
+    0.02,
+    0.06,
+    0.045
+  ) *
+  shallowGlow;
 
 
-    gl_FragColor =
-      vec4(
-        color,
-        0.96
-      );
+/*
+   ================================================
+   LIBERTALIA - MAR 0.4b
+   PRUEBA DE ESPUMA ESTÁTICA
+   ================================================
+
+   Primero comprobamos que podemos crear
+   una banda costera sin animación.
+*/
+
+float foamInner =
+  smoothstep(
+    7.4,
+    7.8,
+    distanceToIsland
+  );
+
+float foamOuter =
+  1.0 -
+  smoothstep(
+    8.2,
+    8.7,
+    distanceToIsland
+  );
+
+float shoreFoam =
+  foamInner * foamOuter;
+
+
+/*
+   Evitamos blanco puro para conservar
+   el tono tropical del agua.
+*/
+
+vec3 shoreFoamColor =
+  vec3(
+    0.82,
+    0.95,
+    0.91
+  );
+
+
+color =
+  mix(
+    color,
+    shoreFoamColor,
+    shoreFoam * 0.70
+  );
+
+
+gl_FragColor =
+  vec4(
+    color,
+    0.96
+  );
   }
 `
     });
