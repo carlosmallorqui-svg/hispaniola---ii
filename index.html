@@ -168,13 +168,12 @@
   }
 ` ,
 
-    fragmentShader: `
+      fragmentShader: `
   precision mediump float;
 
   uniform vec3 deepColor;
   uniform vec3 waterColor;
   uniform vec3 foamColor;
-  uniform float time;
 
   varying vec3 vWorldPosition;
   varying vec3 vNormal;
@@ -190,8 +189,8 @@
 
     /*
        ================================================
-       LIBERTALIA - MAR 0.4
-       ROMPIENTE COSTERA
+       LIBERTALIA - MAR 0.3
+       PROFUNDIDAD COSTERA SIMULADA
        ================================================
     */
 
@@ -206,9 +205,7 @@
 
 
     /*
-       ================================================
-       PROFUNDIDAD SIMULADA - 0.3
-       ================================================
+       Transición de agua somera a profunda.
     */
 
     float depthFactor =
@@ -218,12 +215,22 @@
         distanceToIsland
       );
 
+
+    /*
+       Color tropical del agua poco profunda.
+    */
+
     vec3 shallowColor =
       vec3(
         0.08,
         0.68,
         0.68
       );
+
+
+    /*
+       Variación del color producida por las olas.
+    */
 
     float waveTint =
       clamp(
@@ -238,6 +245,12 @@
         waterColor,
         waveTint
       );
+
+
+    /*
+       Cerca de la isla domina shallowColor.
+       Al alejarnos recuperamos el océano profundo.
+    */
 
     vec3 baseWater =
       mix(
@@ -259,6 +272,11 @@
         max(dot(N, V), 0.0),
         3.0
       );
+
+
+    /*
+       Cielo simulado.
+    */
 
     float skyAmount =
       clamp(
@@ -287,6 +305,7 @@
         sky,
         skyAmount
       );
+
 
     vec3 color =
       mix(
@@ -325,7 +344,7 @@
 
 
     /*
-       Claridad de las crestas.
+       Claridad ligera en las crestas.
     */
 
     float crest =
@@ -342,7 +361,7 @@
 
 
     /*
-       Luminosidad de aguas someras.
+       Luminosidad adicional en aguas someras.
     */
 
     float shallowGlow =
@@ -355,138 +374,6 @@
         0.045
       ) *
       shallowGlow;
-
-
-    /*
-       ================================================
-       NUEVO 0.4 - ESPUMA DE ORILLA
-       ================================================
-
-       Creamos una banda alrededor de la costa.
-
-       La playa principal tiene unos 9 metros
-       de radio, pero el agua está algo por debajo,
-       así que situamos visualmente la rompiente
-       cerca del borde exterior.
-    */
-
-    float t =
-      time * 0.001;
-
-
-    /*
-       Pequeña deformación de la línea.
-
-       Evita un círculo blanco perfecto.
-    */
-
-    float foamDistortion =
-        sin(
-          vWorldPosition.x * 1.35 +
-          t * 0.8
-        ) * 0.18
-
-      + sin(
-          vWorldPosition.z * 1.70 -
-          t * 0.65
-        ) * 0.12
-
-      + sin(
-          (vWorldPosition.x +
-           vWorldPosition.z) * 0.75 +
-          t * 0.35
-        ) * 0.10;
-
-
-    /*
-       La línea de espuma avanza y retrocede
-       lentamente unos centímetros.
-    */
-
-    float tide =
-      sin(t * 0.75) * 0.22;
-
-
-    float shoreDistance =
-      distanceToIsland +
-      foamDistortion +
-      tide;
-
-
-    /*
-       Banda principal.
-
-       Dos smoothstep enfrentados forman
-       una franja en lugar de un círculo sólido.
-    */
-
-    float foamBand =
-      smoothstep(
-        7.55,
-        7.85,
-        shoreDistance
-      ) *
-      (
-        1.0 -
-        smoothstep(
-          8.35,
-          8.80,
-          shoreDistance
-        )
-      );
-
-
-    /*
-       Rompemos todavía más la uniformidad.
-
-       La espuma aparece con diferente intensidad
-       a lo largo de la costa.
-    */
-
-    float foamVariation =
-      0.65 +
-      0.35 *
-      sin(
-        vWorldPosition.x * 2.1 -
-        vWorldPosition.z * 1.7 +
-        t * 1.4
-      );
-
-
-    /*
-       Las crestas del propio oleaje también
-       modifican ligeramente la espuma.
-    */
-
-    float shoreFoam =
-      foamBand *
-      clamp(
-        foamVariation +
-        vWave * 1.3,
-        0.0,
-        1.0
-      );
-
-
-    /*
-       Mezclamos en vez de sumar blanco puro.
-       Así conserva algo del color turquesa
-       que hay debajo.
-    */
-
-    vec3 shoreFoamColor =
-      vec3(
-        0.82,
-        0.95,
-        0.91
-      );
-
-    color =
-      mix(
-        color,
-        shoreFoamColor,
-        shoreFoam * 0.72
-      );
 
 
     gl_FragColor =
