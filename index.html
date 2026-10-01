@@ -21,66 +21,152 @@
       },
 
       vertexShader: `
-        uniform float time;
+  uniform float time;
 
-        varying vec3 vWorldPosition;
-        varying vec3 vNormal;
-        varying float vWave;
+  varying vec3 vWorldPosition;
+  varying vec3 vNormal;
+  varying float vWave;
 
-        void main() {
+  void main() {
 
-          vec3 pos = position;
+    vec3 pos = position;
+    float t = time * 0.001;
 
-          float t = time * 0.001;
+    /*
+       ==================================================
+       LIBERTALIA - MAR 0.2
+       Oleaje orgánico multicapa
+       ==================================================
+    */
 
-          float wave1 =
-            sin(pos.x * 0.22 + t * 1.1) * 0.16;
+    // Oleaje principal.
+    float wave1 =
+      sin(pos.x * 0.22 + t * 1.10) * 0.16;
 
-          float wave2 =
-            sin(pos.y * 0.31 - t * 0.85) * 0.10;
+    float wave2 =
+      sin(pos.y * 0.31 - t * 0.85) * 0.10;
 
-          float wave3 =
-            sin((pos.x + pos.y) * 0.16 + t * 0.55) * 0.07;
+    float wave3 =
+      sin((pos.x + pos.y) * 0.16 + t * 0.55) * 0.07;
 
-          float wave = wave1 + wave2 + wave3;
 
-          pos.z += wave;
+    /*
+       Ondas secundarias diagonales.
 
-          vec4 world =
-            modelMatrix * vec4(pos, 1.0);
+       Son pequeñas deliberadamente:
+       no queremos más altura, sino romper
+       la regularidad del patrón anterior.
+    */
 
-          vWorldPosition = world.xyz;
-          vWave = wave;
+    float phase4 =
+      pos.x * 0.37 -
+      pos.y * 0.23 +
+      t * 0.73;
 
-          /*
-             Normal aproximada de las olas.
-             Mucho más barata que calcular reflejos reales.
-          */
+    float wave4 =
+      sin(phase4) * 0.035;
 
-          float dx =
-              0.22 * 0.16 *
-              cos(pos.x * 0.22 + t * 1.1)
-            + 0.16 * 0.07 *
-              cos((pos.x + pos.y) * 0.16 + t * 0.55);
 
-          float dy =
-              0.31 * 0.10 *
-              cos(pos.y * 0.31 - t * 0.85)
-            + 0.16 * 0.07 *
-              cos((pos.x + pos.y) * 0.16 + t * 0.55);
+    float phase5 =
+      pos.x * 0.13 +
+      pos.y * 0.41 -
+      t * 0.47;
 
-          vec3 localNormal =
-            normalize(vec3(-dx, -dy, 1.0));
+    float wave5 =
+      sin(phase5) * 0.025;
 
-          vNormal =
-            normalize(mat3(modelMatrix) * localNormal);
 
-          gl_Position =
-            projectionMatrix *
-            modelViewMatrix *
-            vec4(pos, 1.0);
-        }
-      `,
+    /*
+       Modulación lenta.
+
+       Hace que el oleaje secundario gane
+       y pierda ligeramente intensidad
+       según la zona y el momento.
+    */
+
+    float modulation =
+      0.75 +
+      0.25 *
+      sin(
+        pos.x * 0.045 +
+        pos.y * 0.035 +
+        t * 0.18
+      );
+
+
+    float wave =
+        wave1
+      + wave2
+      + wave3
+      + (wave4 + wave5) * modulation;
+
+
+    pos.z += wave;
+
+
+    vec4 world =
+      modelMatrix * vec4(pos, 1.0);
+
+    vWorldPosition = world.xyz;
+    vWave = wave;
+
+
+    /*
+       ==================================================
+       NORMAL APROXIMADA
+       ==================================================
+
+       Incluimos las nuevas ondas para que
+       también afecten al Fresnel y al brillo.
+    */
+
+    float dx =
+        0.22 * 0.16 *
+        cos(pos.x * 0.22 + t * 1.10)
+
+      + 0.16 * 0.07 *
+        cos((pos.x + pos.y) * 0.16 + t * 0.55)
+
+      + 0.37 * 0.035 *
+        cos(phase4) * modulation
+
+      + 0.13 * 0.025 *
+        cos(phase5) * modulation;
+
+
+    float dy =
+        0.31 * 0.10 *
+        cos(pos.y * 0.31 - t * 0.85)
+
+      + 0.16 * 0.07 *
+        cos((pos.x + pos.y) * 0.16 + t * 0.55)
+
+      - 0.23 * 0.035 *
+        cos(phase4) * modulation
+
+      + 0.41 * 0.025 *
+        cos(phase5) * modulation;
+
+
+    vec3 localNormal =
+      normalize(
+        vec3(-dx, -dy, 1.0)
+      );
+
+
+    vNormal =
+      normalize(
+        mat3(modelMatrix) *
+        localNormal
+      );
+
+
+    gl_Position =
+      projectionMatrix *
+      modelViewMatrix *
+      vec4(pos, 1.0);
+  }
+` ,
 
       fragmentShader: `
         precision mediump float;
