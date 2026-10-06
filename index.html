@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Libertalia - Mar 0.8b Color equilibrado</title>
+
+  <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+
+  <script>
+    /* =========================================================
+       AGUA EXPERIMENTAL - LIBERTALIA
+       ========================================================= */
+
+
+    /* =========================================================
+       CIELO 1.0 - ATARDECER DE LIBERTALIA
+       Gradiente atmosférico + sol + nubes procedurales ligeras.
+       Preparado para evolucionar después al ciclo día/noche.
+       ========================================================= */
+    AFRAME.registerShader('libertalia-sky', {
+      schema: {
+        time: {type: 'time', is: 'uniform'},
+        phase: {type: 'number', is: 'uniform', default: 0.75}
+      },
+
+      vertexShader: `
+        varying vec3 vDir;
+        void main() {
+          vDir = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+
+      fragmentShader: `
+        precision mediump float;
+        uniform float time;
+        uniform float phase;
+        varying vec3 vDir;
+        #define PI 3.14159265359
+
+        float hash21(vec2 p) {
+          p = fract(p * vec2(123.34,456.21));
+          p += dot(p,p+45.32);
+          return fract(p.x*p.y);
+        }
+
+        void main() {
+          vec3 d=normalize(vDir);
+          float p=fract(phase);
+          float a=(p-0.25)*2.0*PI;
+          vec3 sunDir=normalize(vec3(-cos(a)*0.72,sin(a),-0.69));
+          vec3 moonDir=-sunDir;
+          float sh=sunDir.y;
+          float day=smoothstep(-0.12,0.16,sh);
+          float tw=1.0-smoothstep(-0.10,0.30,abs(sh));
+          float y=clamp(d.y,0.0,1.0);
+
+          vec3 night=mix(vec3(0.035,0.075,0.15),vec3(0.008,0.018,0.060),smoothstep(0.0,0.78,y));
+          vec3 daylight=mix(vec3(0.43,0.68,0.86),vec3(0.075,0.28,0.62),smoothstep(0.0,0.78,y));
+          vec3 sky=mix(night,daylight,day);
+
+          float az=max(dot(normalize(vec3(d.x,0.04,d.z)),
+                           normalize(vec3(sunDir.x,0.04,sunDir.z))),0.0);
+          float warm=tw*pow(az,2.2)*(1.0-smoothstep(0.05,0.55,y));
+          sky=mix(sky,vec3(1.0,0.31,0.075),warm*0.68);
+
+          float sd=max(dot(d,sunDir),0.0);
+          sky+=vec3(1.0,0.38,0.10)*pow(sd,42.0)*day*(0.18+tw*0.38);
+
+          /* Estrellas */
+          float starsOn=1.0-smoothstep(-0.10,0.05,sh);
+          vec2 uv=vec2(atan(d.z,d.x)/(2.0*PI)+0.5,asin(clamp(d.y,-1.0,1.0))/PI+0.5);
+          float rnd=hash21(floor(uv*vec2(220.0,110.0)));
+          float star=step(0.986,rnd)*smoothstep(-0.02,0.12,d.y)*starsOn;
+          star*=0.72+0.28*sin(time*0.0012+rnd*31.0);
+          sky+=vec3(0.80,0.88,1.0)*star*0.78;
+
+          /* Luna */
+          float md=max(dot(d,moonDir),0.0);
+          float mv=1.0-smoothstep(-0.05,0.12,sh);
+          sky+=vec3(0.40,0.48,0.65)*pow(md,70.0)*mv*0.12;
+
+          /* Nubes móviles */
+          vec2 cp=d.xz/max(d.y+0.34,0.16);
+          cp*=1.15;
+          float anim=time*0.000025;
+          float n=sin(cp.x*2.3+cp.y*1.4+anim*2.0)*0.50+
+                  sin(cp.x*4.1-cp.y*2.7-anim*1.35)*0.32+
+                  sin((cp.x+cp.y)*6.2+anim*0.82)*0.18;
+          float clouds=smoothstep(0.34,0.76,n)*
+                       smoothstep(0.035,0.15,d.y)*
+                       (1.0-smoothstep(0.72,0.98,d.y));
+          vec3 cc=mix(vec3(0.11,0.14,0.22),vec3(0.76,0.79,0.82),day);
+          cc=mix(cc,vec3(1.0,0.50,0.27),warm*0.85);
+          sky=mix(sky,cc,clouds*(0.25+day*0.17));
+
+          float haze=1.0-smoothstep(0.0,0.11,abs(d.y));
+          vec3 hc=mix(vec3(0.10,0.15,0.25),vec3(0.55,0.68,0.76),day);
+          hc=mix(hc,vec3(0.82,0.40,0.24),tw*0.62);
+          sky=mix(sky,hc,haze*0.22);
+
+          gl_FragColor=vec4(sky,1.0);
+        }
+      `
+    });
+
+
+    AFRAME.registerShader('libertalia-water', {
+      schema: {
+        time:       {type: 'time', is: 'uniform'},
+        deepColor:  {type: 'color', is: 'uniform', default: '#0d5065'},
+        waterColor: {type: 'color', is: 'uniform', default: '#176f80'},
+        foamColor:  {type: 'color', is: 'uniform', default: '#bce7df'}
+      },
+
+      vertexShader: `
+  uniform float time;
+
+  varying vec3 vWorldPosition;
+  varying vec3 vNormal;
+  varying float vWave;
+
+  void main() {
+
+    vec3 pos = position;
+    float t = time * 0.001;
+
+    /*
+       ==================================================
+       LIBERTALIA - MAR 0.2
+       Oleaje orgánico multicapa
+       ==================================================
+    */
+
+    // Oleaje principal.
+    float wave1 =
+      sin(pos.x * 0.22 + t * 1.10) * 0.08;
+
+    float wave2 =
+      sin(pos.y * 0.31 - t * 0.85) * 0.05;
+
+    float wave3 =
+      sin((pos.x + pos.y) * 0.16 + t * 0.55) * 0.035;
+
+
+    /*
+       Ondas secundarias diagonales.
+
+       Son pequeñas deliberadamente:
+       no queremos más altura, sino romper
+       la regularidad del patrón anterior.
+    */
+
+    float phase4 =
+      pos.x * 0.37 -
+      pos.y * 0.23 +
+      t * 0.73;
+
+    float wave4 =
+      sin(phase4) * 0.0175;
+
+
+    float phase5 =
+      pos.x * 0.13 +
+      pos.y * 0.41 -
+      t * 0.47;
+
+    float wave5 =
+      sin(phase5) * 0.0125;
+
+    /* 0.8 - RELIEVE FINO REAL
+       Dos ondulaciones cortas calculadas en el vertex shader.
+       Aportan relieve y, sobre todo, normales mucho más ricas.
+    */
+    float phase6 =
+      pos.x * 0.82 +
+      pos.y * 0.34 +
+      t * 1.28;
+
+    float wave6 = sin(phase6) * 0.045;
+
+    float phase7 =
+      pos.x * 0.38 -
+      pos.y * 0.96 -
+      t * 1.05;
+
+    float wave7 = sin(phase7) * 0.035;
+
+
+    /*
+       Modulación lenta.
+
+       Hace que el oleaje secundario gane
+       y pierda ligeramente intensidad
+       según la zona y el momento.
+    */
+
+    float modulation =
+      0.75 +
+      0.25 *
+      sin(
+        pos.x * 0.045 +
+        pos.y * 0.035 +
+        t * 0.18
+      );
+
+
+    float wave =
+        wave1
+      + wave2
+      + wave3
+      + (wave4 + wave5) * modulation
+      + wave6
+      + wave7;
+
+
+    pos.z += wave;
+
+
+    vec4 world =
+      modelMatrix * vec4(pos, 1.0);
+
+    vWorldPosition = world.xyz;
+    vWave = wave;
+
+
+    /*
+       ==================================================
+       NORMAL APROXIMADA
+       ==================================================
+
+       Incluimos las nuevas ondas para que
+       también afecten al Fresnel y al brillo.
+    */
+
+    float dx =
+        0.22 * 0.08 *
+        cos(pos.x * 0.22 + t * 1.10)
+
+      + 0.16 * 0.035 *
+        cos((pos.x + pos.y) * 0.16 + t * 0.55)
+
+      + 0.37 * 0.0175 *
+        cos(phase4) * modulation
+
+      + 0.13 * 0.0125 *
+        cos(phase5) * modulation
+
+      + 0.82 * 0.045 *
+        cos(phase6)
+
+      + 0.38 * 0.035 *
+        cos(phase7);
+
+
+    float dy =
+        0.31 * 0.05 *
+        cos(pos.y * 0.31 - t * 0.85)
+
+      + 0.16 * 0.035 *
+        cos((pos.x + pos.y) * 0.16 + t * 0.55)
+
+      - 0.23 * 0.0175 *
+        cos(phase4) * modulation
+
+      + 0.41 * 0.0125 *
+        cos(phase5) * modulation
+
+      + 0.34 * 0.045 *
+        cos(phase6)
+
+      - 0.96 * 0.035 *
+        cos(phase7);
+
+
+    vec3 localNormal =
+      normalize(
+        vec3(-dx, -dy, 1.0)
+      );
+
+
+    vNormal =
+      normalize(
+        mat3(modelMatrix) *
+        localNormal
+      );
+
+
+    gl_Position =
+      projectionMatrix *
+      modelViewMatrix *
+      vec4(pos, 1.0);
+  }
+` ,
+
+      fragmentShader: `
+  precision mediump float;
+
+  uniform vec3 deepColor;
+  uniform vec3 waterColor;
+  uniform vec3 foamColor;
+
+  varying vec3 vWorldPosition;
+  varying vec3 vNormal;
+  varying float vWave;
+
+  float coastRadius(float a) {
+    return 8.90
+      + sin(a * 3.0 + 0.45) * 0.42
+      + sin(a * 5.0 - 1.10) * 0.23
+      + sin(a * 8.0 + 2.00) * 0.12;
+  }
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 V = normalize(cameraPosition - vWorldPosition);
+
+    vec2 islandCenter = vec2(0.0, -5.0);
+    vec2 rel = vWorldPosition.xz - islandCenter;
+    float rawDistance = length(rel);
+    float angle = atan(rel.y, rel.x);
+    float coast = coastRadius(angle);
+    float coastDistance = rawDistance - coast;
+
+    /* Gradación costera: agua muy clara sobre arena -> turquesa -> océano. */
+    float shelfFactor = smoothstep(0.15, 7.2, coastDistance);
+    float lagoonFactor = smoothstep(0.15, 3.2, coastDistance);
+
+    vec3 sandWater = vec3(0.18, 0.61, 0.63);
+    vec3 turquoise = vec3(0.075, 0.47, 0.54);
+
+    float waveTint = clamp(vWave * 1.8 + 0.5, 0.0, 1.0);
+    vec3 normalWater = mix(deepColor, waterColor, waveTint);
+    vec3 coastalWater = mix(sandWater, turquoise, lagoonFactor);
+    vec3 baseWater = mix(coastalWater, normalWater, shelfFactor);
+
+    float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+    float skyAmount = clamp(V.y * 0.5 + 0.5, 0.0, 1.0);
+    vec3 horizon = vec3(0.95, 0.55, 0.38);
+    vec3 sky = vec3(0.35, 0.58, 0.72);
+    vec3 reflectedSky = mix(horizon, sky, skyAmount);
+    vec3 color = mix(baseWater, reflectedSky, fresnel * 0.68);
+
+    vec3 lightDir = normalize(vec3(-0.4, 1.0, 0.25));
+    vec3 H = normalize(lightDir + V);
+    float specular = pow(max(dot(N, H), 0.0), 80.0);
+    color += foamColor * specular * 0.72;
+
+    float crest = smoothstep(0.18, 0.32, vWave);
+    color += foamColor * crest * 0.07;
+
+    float shallowGlow = 1.0 - shelfFactor;
+    color += vec3(0.025, 0.07, 0.055) * shallowGlow;
+
+    /* 0.7f - PRUEBA DE BRILLO VISIBLE
+       Misma tecnica compatible de 0.7e, deliberadamente mas intensa.
+       Reutiliza vWave: sin nuevas funciones, varyings ni geometria.
+    */
+    /* MAR - TONALIDAD FINAL DE PRUEBA
+       Conserva el relieve 0.8 pero comprime mucho el rango luminoso. */
+    float surfaceDetail = clamp(vWave * 4.6 + 0.46, 0.0, 1.0);
+    color += vec3(0.12, 0.32, 0.39) * surfaceDetail * 0.035;
+
+    float surfaceShade = clamp(vWave * 5.0, -0.40, 0.40);
+    color *= 1.0 + surfaceShade * 0.075;
+
+    /* Brillo azulado contenido: las crestas ya no se van a blanco. */
+    float broadSpec = pow(max(dot(N, H), 0.0), 26.0);
+    color += vec3(0.20, 0.43, 0.50) * broadSpec * 0.030;
+
+    /* Suelo azul marino: los valles nunca caen visualmente a negro. */
+    color = max(color, vec3(0.050, 0.225, 0.285));
+
+    /*
+       LIBERTALIA 0.7 - ESPUMA ORGÁNICA
+       La línea sigue la misma costa irregular que la geometría.
+       Dos escalas de ruido trigonométrico rompen la banda continua.
+       La ola desplaza ligeramente el borde para simular avance/retroceso.
+    */
+    float alongCoast =
+        sin(angle * 11.0 + vWorldPosition.x * 0.55) * 0.50
+      + sin(angle * 19.0 - vWorldPosition.z * 0.43) * 0.28
+      + sin(vWorldPosition.x * 1.35 + vWorldPosition.z * 0.92) * 0.22;
+
+    /*
+       LIBERTALIA 0.7d - ESPUMA EXPANDIDA + AGUA SOMERA MÁS TRANSPARENTE
+       La espuma penetra bastante más sobre la playa y se ensancha un poco
+       hacia el mar. El borde interior permanece anclado a la arena.
+    */
+    float movingOuter = coastDistance - vWave * 0.55;
+
+    // Base continua: penetra ~1.2 m en la arena y se extiende algo más mar afuera.
+    float anchoredInner = smoothstep(-1.38, -1.12, coastDistance);
+    float anchoredOuter = 1.0 - smoothstep(0.58, 1.12, movingOuter);
+    float anchoredBand = anchoredInner * anchoredOuter;
+
+    // Irregularidad solo hacia el lado del mar; nunca rompe el contacto con arena.
+    float breakup = smoothstep(-0.42, 0.34, alongCoast + vWave * 1.65);
+    float seaSide = smoothstep(-0.08, 0.38, coastDistance);
+    float irregularity = mix(1.0, mix(0.48, 1.0, breakup), seaSide);
+    float lace = 0.72 + 0.28 * smoothstep(-0.10, 0.20, vWave);
+    float shoreFoam = anchoredBand * irregularity * lace;
+
+    // Lavado blanco muy suave que penetra algo más sobre la arena mojada.
+    float sandWashInner = smoothstep(-1.85, -1.52, coastDistance);
+    float sandWashOuter = 1.0 - smoothstep(-0.12, 0.16, coastDistance);
+    float sandWash = sandWashInner * sandWashOuter * (0.72 + 0.28 * breakup);
+
+    // Restos de espuma mar adentro, separados y tenues.
+    float washInner = smoothstep(0.55, 0.76, movingOuter);
+    float washOuter = 1.0 - smoothstep(0.98, 1.38, movingOuter);
+    float wash = washInner * washOuter * smoothstep(-0.15, 0.45, -alongCoast);
+
+    vec3 shoreFoamColor = vec3(0.93, 0.995, 0.975);
+    float totalFoam = clamp(shoreFoam * 0.92 + sandWash * 0.30 + wash * 0.18, 0.0, 0.95);
+    color = mix(color, shoreFoamColor, totalFoam);
+
+    // Más transparente sobre la plataforma somera; recupera cuerpo mar adentro.
+    float waterAlpha = mix(0.78, 0.93, shelfFactor);
+    gl_FragColor = vec4(color, waterAlpha);
+  }
+`
+    });
+
+
+    /* =========================================================
+       LOCOMOCIÓN QUEST
+       ========================================================= */
+
+    AFRAME.registerComponent('quest-locomotion', {
+      init: function () {
+        this.axis = [0, 0];
+
+        this.el.addEventListener('thumbstickmoved', (event) => {
+          this.axis = [
+            event.detail.x,
+            event.detail.y
+          ];
+        });
+      },
+
+      tick: function (time, delta) {
+
+        const rig =
+          document.querySelector('#rig');
+
+        const camera =
+          document.querySelector('#camera');
+
+        if (!rig || !camera) return;
+
+        const x =
+          -(this.axis[0] || 0);
+
+        const y =
+          -(this.axis[1] || 0);
+
+        if (
+          Math.abs(x) < 0.15 &&
+          Math.abs(y) < 0.15
+        ) return;
+
+        const direction =
+          new THREE.Vector3();
+
+        camera.object3D
+          .getWorldDirection(direction);
+
+        direction.y = 0;
+        direction.normalize();
+
+        const right =
+          new THREE.Vector3();
+
+        right
+          .crossVectors(
+            direction,
+            new THREE.Vector3(0, 1, 0)
+          )
+          .normalize();
+
+        const speed =
+          2.0 * (delta / 1000);
+
+        rig.object3D.position
+          .addScaledVector(
+            direction,
+            -y * speed
+          );
+
+        rig.object3D.position
+          .addScaledVector(
+            right,
+            x * speed
+          );
+      }
+    });
+
+
+    /* =========================================================
+       GIRO SUAVE
+       ========================================================= */
+
+    AFRAME.registerComponent('smooth-turn', {
+
+      init: function () {
+
+        this.turnX = 0;
+
+        this.el.addEventListener(
+          'thumbstickmoved',
+          (event) => {
+
+            this.turnX =
+              event.detail.x || 0;
+          }
+        );
+      },
+
+      tick: function (time, delta) {
+
+        if (
+          Math.abs(this.turnX) < 0.15
+        ) return;
+
+        const rig =
+          document.querySelector('#rig');
+
+        if (!rig) return;
+
+        const turnSpeed = 180;
+
+        const amount =
+          -this.turnX *
+          turnSpeed *
+          (delta / 1000);
+
+        rig.object3D.rotation.y +=
+          THREE.MathUtils.degToRad(amount);
+      }
+    });
+
+  </script>
+</head>
+
+<body>
+
+<a-scene>
+
+  <!-- ===============================================
+       LIBERTALIA 0.7 - ISLA ORGÁNICA DE PENDIENTE CONTINUA
+       ===============================================
+       Una sola malla radial sustituye los cilindros escalonados.
+       El perfil desciende suavemente desde tierra firme hasta
+       una plataforma de arena sumergida bajo el mar.
+  -->
+
+  <a-entity id="smoothIsland" position="0 0 -5"></a-entity>
+
+  <script>
+    AFRAME.registerComponent('smooth-island', {
+      init: function () {
+        const THREE = AFRAME.THREE;
+        const radialSegments = 128;
+        const rings = 32;
+        const maxRadius = 13.8;
+        const positions = [];
+        const indices = [];
+
+        // Misma función de silueta usada conceptualmente por el shader del agua.
+        function coastRadius(a) {
+          return 8.90
+            + Math.sin(a * 3.0 + 0.45) * 0.42
+            + Math.sin(a * 5.0 - 1.10) * 0.23
+            + Math.sin(a * 8.0 + 2.00) * 0.12;
+        }
+
+        function heightAt(r, a) {
+          const coast = coastRadius(a);
+          const inner = coast - 3.05;
+          const outerShelf = coast + 3.55;
+
+          if (r < inner) {
+            const x = r / Math.max(inner, 0.1);
+            return 0.03 + 0.30 * (1.0 - x * x);
+          }
+          if (r < coast) {
+            const x = (r - inner) / (coast - inner);
+            const e = x * x * (3.0 - 2.0 * x);
+            return 0.03 * (1.0 - e) + (-0.70) * e;
+          }
+          if (r < outerShelf) {
+            const x = (r - coast) / (outerShelf - coast);
+            const e = x * x * (3.0 - 2.0 * x);
+            return -0.70 * (1.0 - e) + (-1.58) * e;
+          }
+          const x = Math.min((r - outerShelf) / 1.25, 1.0);
+          return -1.58 - 0.18 * x;
+        }
+
+        for (let ring = 0; ring <= rings; ring++) {
+          const baseR = maxRadius * ring / rings;
+          for (let i = 0; i <= radialSegments; i++) {
+            const a = Math.PI * 2 * i / radialSegments;
+            // La deformación crece hacia la costa; el centro queda estable.
+            const coast = coastRadius(a);
+            const coastDelta = coast - 8.90;
+            const influence = Math.min(baseR / 7.0, 1.0);
+            const r = baseR + coastDelta * influence;
+            positions.push(Math.cos(a) * r, heightAt(r, a), Math.sin(a) * r);
+          }
+        }
+
+        const row = radialSegments + 1;
+        for (let ring = 0; ring < rings; ring++) {
+          for (let i = 0; i < radialSegments; i++) {
+            const a = ring * row + i;
+            const b = a + row;
+            indices.push(a, b, a + 1, b, b + 1, a + 1);
+          }
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setIndex(indices);
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshStandardMaterial({
+          color: new THREE.Color('#e3cb96'),
+          roughness: 1.0,
+          metalness: 0.0,
+          side: THREE.DoubleSide
+        });
+
+        this.el.setObject3D('mesh', new THREE.Mesh(geometry, material));
+      }
+    });
+
+    document.querySelector('#smoothIsland').setAttribute('smooth-island', '');
+  </script>
+
+  <!-- Cubo original -->
+
+  <a-box
+    position="0 1 -4"
+    width="1"
+    height="2"
+    depth="1"
+    color="#8B4513">
+  </a-box>
+
+
+  <!-- Esfera original -->
+
+  <a-sphere
+    position="2 1 -5"
+    radius="0.75"
+    color="#D8B46A">
+  </a-sphere>
+
+
+  <!-- ===============================================
+       MAR EXPERIMENTAL
+       ===============================================
+
+       Es un plano subdividido porque necesitamos
+       suficientes vértices para deformarlo y crear olas.
+  -->
+
+  <!-- OCÉANO LEJANO - extensión aprobada, ahora más baja y fusionada -->
+  <a-plane
+    id="far-ocean"
+    position="0 -1.70 -5"
+    rotation="-90 0 0"
+    width="2000"
+    height="2000"
+    segments-width="1"
+    segments-height="1"
+    material="shader: flat; color: #0d5065; side: double; transparent: true; opacity: 0.62; depthWrite: false">
+  </a-plane>
+
+
+  <a-plane
+    id="ocean"
+    position="0 -0.72 -5"
+    rotation="-90 0 0"
+
+    width="400"
+    height="400"
+
+    segments-width="160"
+    segments-height="160"
+
+    material="
+      shader: libertalia-water;
+      deepColor: #0d5065;
+      waterColor: #176f80;
+      foamColor: #d7f4ee;
+      side: double;
+      transparent: true">
+  </a-plane>
+
+
+  <!-- ===============================================
+       ROCAS
+       =============================================== -->
+
+  <a-dodecahedron
+    position="-7 0.6 -7"
+    radius="2.2"
+    scale="1 1.4 0.8"
+    color="#55514A">
+  </a-dodecahedron>
+
+  <a-dodecahedron
+    position="-6.5 0.3 -3"
+    radius="1.5"
+    scale="1.2 0.9 1"
+    color="#666057">
+  </a-dodecahedron>
+
+  <a-dodecahedron
+    position="7 0.7 -7"
+    radius="2.4"
+    scale="0.9 1.5 0.8"
+    color="#504D48">
+  </a-dodecahedron>
+
+  <a-dodecahedron
+    position="6.5 0.25 -2.5"
+    radius="1.4"
+    scale="1.3 0.8 1"
+    color="#696158">
+  </a-dodecahedron>
+
+  <a-dodecahedron
+    position="-4 0.15 -11"
+    radius="1.2"
+    scale="1.5 0.7 1"
+    color="#5B5650">
+  </a-dodecahedron>
+
+
+  <!-- ===============================================
+       PALMERA
+       =============================================== -->
+
+  <a-entity
+    position="3 0 -7"
+    rotation="0 0 -7">
+
+    <a-cylinder
+      position="0 2 0"
+      radius="0.22"
+      height="4"
+      segments-radial="8"
+      color="#76543A">
+    </a-cylinder>
+
+    <a-entity position="0 4 0">
+
+      <a-cone
+        position="0.9 0 0"
+        rotation="0 0 -90"
+        radius-bottom="0.55"
+        radius-top="0.05"
+        height="2.2"
+        color="#376B3A">
+      </a-cone>
+
+      <a-cone
+        position="-0.9 0 0"
+        rotation="0 0 90"
+        radius-bottom="0.55"
+        radius-top="0.05"
+        height="2.2"
+        color="#376B3A">
+      </a-cone>
+
+      <a-cone
+        position="0 0 -0.9"
+        rotation="-90 0 0"
+        radius-bottom="0.55"
+        radius-top="0.05"
+        height="2.2"
+        color="#315F35">
+      </a-cone>
+
+      <a-cone
+        position="0 0 0.9"
+        rotation="90 0 0"
+        radius-bottom="0.55"
+        radius-top="0.05"
+        height="2.2"
+        color="#315F35">
+      </a-cone>
+
+    </a-entity>
+  </a-entity>
+
+
+  <!-- ===============================================
+       CIELO E ILUMINACIÓN
+       =============================================== -->
+
+  <!-- CIELO 1.0 - atardecer procedural -->
+  <a-sky id="libertalia-sky"
+    radius="500"
+    material="shader: libertalia-sky; phase: 0.75; side: back">
+  </a-sky>
+
+  <!-- Luz ambiental de final de tarde: cálida, pero ya no naranja total. -->
+  <a-light id="ambient-cycle"
+    type="ambient"
+    color="#B8C8D8"
+    intensity="0.58">
+  </a-light>
+
+  <!-- Sol bajo y cálido. -->
+  <a-light id="sun-cycle"
+    type="directional"
+    color="#FFD0A0"
+    intensity="1.05"
+    position="-8 3 -7">
+  </a-light>
+
+
+  <!-- ===============================================
+       JUGADOR VR
+       =============================================== -->
+
+
+
+  <!-- Astros geométricos limpios: evitan el pixelado del disco dentro del shader -->
+  <a-entity id="celestial-root">
+    <a-sphere id="sun-disc" radius="4.2"
+      material="shader: flat; color: #FFF0B8; fog: false"
+      position="-50 8 -48">
+    </a-sphere>
+    <a-sphere id="moon-disc" radius="3.5"
+      material="shader: flat; color: #D9E2EC; fog: false"
+      position="50 -8 48"
+      visible="false">
+    </a-sphere>
+  </a-entity>
+
+  <!-- Mandos provisionales del reloj de Libertalia -->
+  <a-entity id="time-controls" position="0 2.15 -2.35">
+    <a-plane width="2.95" height="0.78" color="#07131C" opacity="0.80"></a-plane>
+    <a-text id="time-label" value="LIBERTALIA - ATARDECER [AUTO]"
+            align="center" width="3.5" position="0 0.22 0.012" color="#F6E7C4"></a-text>
+    <a-plane class="timeBtn clickable" data-phase="0.25" position="-1.10 -0.12 0.02" width="0.48" height="0.26" color="#806A4A"></a-plane>
+    <a-text value="AMAN." align="center" width="1.15" position="-1.10 -0.135 0.035" color="#FFFFFF"></a-text>
+    <a-plane class="timeBtn clickable" data-phase="0.50" position="-0.55 -0.12 0.02" width="0.48" height="0.26" color="#806A4A"></a-plane>
+    <a-text value="DIA" align="center" width="1.15" position="-0.55 -0.135 0.035" color="#FFFFFF"></a-text>
+    <a-plane class="timeBtn clickable" data-phase="0.75" position="0 -0.12 0.02" width="0.48" height="0.26" color="#806A4A"></a-plane>
+    <a-text value="ATAR." align="center" width="1.15" position="0 -0.135 0.035" color="#FFFFFF"></a-text>
+    <a-plane class="timeBtn clickable" data-phase="0.00" position="0.55 -0.12 0.02" width="0.48" height="0.26" color="#806A4A"></a-plane>
+    <a-text value="NOCHE" align="center" width="1.15" position="0.55 -0.135 0.035" color="#FFFFFF"></a-text>
+    <a-plane id="autoBtn" class="clickable" position="1.10 -0.12 0.02" width="0.48" height="0.26" color="#3F765D"></a-plane>
+    <a-text id="autoText" value="PAUSA" align="center" width="1.15" position="1.10 -0.135 0.035" color="#FFFFFF"></a-text>
+  </a-entity>
+
+  <a-entity
+    id="rig"
+    position="0 0 0">
+
+    <a-camera
+      id="camera"
+      position="0 1.6 0"
+      look-controls>
+      <a-cursor id="time-cursor"
+            fuse="true"
+            fuse-timeout="650"
+            raycaster="objects: .clickable"
+            geometry="primitive: ring; radiusInner: 0.006; radiusOuter: 0.010"
+            material="color: white; shader: flat; opacity: 0.85">
+  </a-cursor>
+</a-camera>
+
+    <a-entity
+      id="leftHand"
+      hand-controls="hand: left"
+      quest-locomotion>
+    </a-entity>
+
+    <a-entity
+      id="rightHand"
+      hand-controls="hand: right"
+      smooth-turn>
+    </a-entity>
+
+  </a-entity>
+
+</a-scene>
+
+
+<script>
+(function(){
+  const CYCLE_SECONDS=40;
+  let phase=0.75, auto=true, last=performance.now();
+  const clamp=x=>Math.max(0,Math.min(1,x));
+  function mixHex(a,b,t){
+    const A=[1,3,5].map(i=>parseInt(a.slice(i,i+2),16));
+    const B=[1,3,5].map(i=>parseInt(b.slice(i,i+2),16));
+    return '#'+A.map((v,i)=>Math.round(v+(B[i]-v)*t).toString(16).padStart(2,'0')).join('');
+  }
+  function sunY(p){return Math.sin((p-0.25)*Math.PI*2);}
+  function name(p){
+    if(p<0.18||p>=0.90)return'NOCHE';
+    if(p<0.34)return'AMANECER';
+    if(p<0.66)return'DIA';
+    if(p<0.84)return'ATARDECER';
+    return'CREPUSCULO';
+  }
+  function apply(){
+    const sky=document.querySelector('#libertalia-sky'),
+          amb=document.querySelector('#ambient-cycle'),
+          sun=document.querySelector('#sun-cycle'),
+          lab=document.querySelector('#time-label');
+    if(!sky||!amb||!sun)return;
+    sky.setAttribute('material','phase',phase);
+    const sy=sunY(phase), ang=(phase-0.25)*Math.PI*2;
+    const day=clamp((sy+0.12)/0.32);
+    const tw=1-clamp(Math.abs(sy)/0.38);
+    sun.setAttribute('position',`${(-Math.cos(ang)*8).toFixed(2)} ${(sy*8).toFixed(2)} -7`);
+
+    const sunDisc=document.querySelector('#sun-disc');
+    const moonDisc=document.querySelector('#moon-disc');
+    const cx=-Math.cos(ang)*52, cy=sy*52, cz=-50;
+    if(sunDisc){
+      sunDisc.setAttribute('position',`${cx.toFixed(2)} ${cy.toFixed(2)} ${cz}`);
+      sunDisc.setAttribute('visible',sy>-0.12);
+    }
+    if(moonDisc){
+      moonDisc.setAttribute('position',`${(-cx).toFixed(2)} ${(-cy).toFixed(2)} ${-cz}`);
+      moonDisc.setAttribute('visible',sy<0.10);
+    }
+
+    sun.setAttribute('intensity',(day*(0.62+0.58*Math.max(0,sy))).toFixed(3));
+    sun.setAttribute('color',mixHex('#FFB06A','#FFF3D1',Math.max(0,sy)));
+    amb.setAttribute('intensity',(0.16+day*0.48+tw*0.08).toFixed(3));
+    amb.setAttribute('color',mixHex('#53647A','#C9D8E3',day));
+    if(lab)lab.setAttribute('value','LIBERTALIA - '+name(phase)+(auto?' [AUTO]':' [PAUSA]'));
+  }
+  function choose(v){
+    phase=((v%1)+1)%1; auto=false;
+    const t=document.querySelector('#autoText'); if(t)t.setAttribute('value','AUTO');
+    apply();
+  }
+  window.addEventListener('load',()=>{
+    document.querySelectorAll('.timeBtn').forEach(e=>e.addEventListener('click',()=>choose(parseFloat(e.dataset.phase))));
+    const ab=document.querySelector('#autoBtn');
+    if(ab)ab.addEventListener('click',()=>{
+      auto=!auto;
+      const t=document.querySelector('#autoText'); if(t)t.setAttribute('value',auto?'PAUSA':'AUTO');
+      apply();
+    });
+    apply();
+    function tick(now){
+      const dt=Math.min((now-last)/1000,0.1); last=now;
+      if(auto){phase=(phase+dt/CYCLE_SECONDS)%1;apply();}
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  });
+})();
+</script>
+
+</body>
+</html>
